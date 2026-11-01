@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Driver Monitoring</title>
+<style>
+  :root {
+    --bg: #0e1013; --surface: #161a20; --surface-2: #1c2129; --line: #272d38;
+    --text: #e4e7ec; --muted: #8a93a3; --faint: #5d6574;
+    --ok: #3dae7c; --warn: #d9a23a; --bad: #e0524a; --info: #6f9bf0;
+    --level: var(--ok);
+  }
+  body[data-level="1"] { --level: var(--warn); }
+  body[data-level="2"] { --level: #e0813a; }
+  body[data-level="3"] { --level: var(--bad); }
+  body[data-level="x"] { --level: var(--faint); }
+
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         font-variant-numeric: tabular-nums; min-height: 100vh; }
+  a { color: inherit; text-decoration: none; }
+
+  /* top bar */
+  .top { display: flex; align-items: center; gap: 28px; padding: 0 24px; height: 52px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .brand { font-weight: 600; letter-spacing: .01em; }
+  .brand span { color: var(--muted); font-weight: 400; }
+  nav { display: flex; height: 100%; }
+  nav a { display: flex; align-items: center; padding: 0 14px; color: var(--muted); border-bottom: 2px solid transparent; }
+  nav a:hover { color: var(--text); }
+  nav a.on { color: var(--text); border-bottom-color: var(--info); }
+  .top .spacer { flex: 1; }
+  .top .clock { color: var(--muted); font-size: 13px; }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 20px 24px 40px; display: grid; gap: 16px;
+         grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+  @media (max-width: 920px) { main { grid-template-columns: 1fr; padding: 16px; } .top { padding: 0 16px; gap: 16px; } }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+  .panel-h { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line);
+             font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+
+  /* status strip */
+  .status { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-left: 4px solid var(--level); background: var(--surface-2);
+            border-bottom: 1px solid var(--line); }
+  .status .state { font-size: 18px; font-weight: 600; color: var(--level); min-width: 150px; }
+  .status .reason { color: var(--muted); }
+  body[data-level="3"] .status { animation: pulse 1s steps(2) infinite; }
+  @keyframes pulse { 50% { background: #3a1c1b; } }
+
+  /* video */
+  .video-wrap { position: relative; background: #000; aspect-ratio: 4/3; overflow: hidden; }
+  video, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .video-wrap .msg { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 24px; font-size: 13px; }
+  .hud { position: absolute; left: 12px; bottom: 10px; right: 12px; display: flex; justify-content: space-between; font-size: 12px; color: #cfd4dc; text-shadow: 0 1px 2px #000; pointer-events: none; }
+  .corners i { position: absolute; width: 22px; height: 22px; border: 0 solid rgba(255,255,255,.55); }
+  .corners i:nth-child(1) { left: 14px; top: 14px; border-width: 2px 0 0 2px; }
+  .corners i:nth-child(2) { right: 14px; top: 14px; border-width: 2px 2px 0 0; }
+  .corners i:nth-child(3) { left: 14px; bottom: 34px; border-width: 0 0 2px 2px; }
+  .corners i:nth-child(4) { right: 14px; bottom: 34px; border-width: 0 2px 2px 0; }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); }
+  button { font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid #343b49; border-radius: 4px; padding: 7px 14px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: #4a5365; }
+  button.primary { background: #2b4a85; border-color: #3a62ad; }
+  button.primary:hover:not(:disabled) { background: #335797; }
+  button:disabled { opacity: .4; cursor: default; }
+  label.chk { display: flex; align-items: center; gap: 6px; color: var(--muted); margin-left: auto; cursor: pointer; }
+  #note { color: var(--muted); font-size: 13px; }
+
+  /* right column */
+  .side { display: grid; gap: 16px; align-content: start; }
+  .gauges { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .gauge { padding: 14px; border-right: 1px solid var(--line); }
+  .gauge:last-child { border-right: 0; }
+  .gauge .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; }
+  .gauge .v { font-size: 32px; font-weight: 600; line-height: 1.2; margin-top: 6px; }
+  .gauge .v small { font-size: 14px; color: var(--muted); font-weight: 400; margin-left: 2px; }
+  .gauge .v.text { font-size: 22px; padding: 6px 0 4px; }
+  .meter { position: relative; height: 4px; background: #2a303b; margin-top: 8px; border-radius: 2px; }
+  .meter b { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--ok); border-radius: 2px; transition: width .3s, background .3s; }
+  .meter u { position: absolute; top: -3px; bottom: -3px; width: 1px; background: #5d6574; }
+  .gauge .cap { margin-top: 8px; font-size: 12px; color: var(--muted); }
+
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); }
+  .stat { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .stat:nth-child(odd) { border-right: 1px solid var(--line); }
+  .stat:nth-last-child(-n+2) { border-bottom: 0; }
+  .stat span { color: var(--muted); }
+  .stat b { font-weight: 500; }
+
+  .lower { grid-column: 1 / -1; display: grid; gap: 16px; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+  @media (max-width: 920px) { .lower { grid-template-columns: 1fr; } }
+  #chart { width: 100%; height: 190px; display: block; }
+  .legend { display: flex; gap: 14px; text-transform: none; letter-spacing: 0; font-size: 12px; }
+  .legend i { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 5px; }
+  .log { max-height: 226px; overflow: auto; }
+  .log table { width: 100%; border-collapse: collapse; }
+  .log td { padding: 7px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .log td:first-child { color: var(--muted); width: 64px; }
+  .log td:nth-child(2) { width: 14px; padding-right: 0; }
+  .log i { display: block; width: 8px; height: 8px; border-radius: 50%; }
+  .empty { padding: 18px 14px; color: var(--faint); }
+  .foot { grid-column: 1 / -1; color: var(--faint); font-size: 12px; }
+</style>
+</head>
+<body data-level="x">
+
+<header class="top">
+  <div class="brand">Driver Monitoring <span>/ fatigue · stress · sleep</span></div>
+  <nav>
+    <a href="driver.html" class="on">Driver</a>
+    <a href="index.html">Emotion</a>
+  </nav>
+  <div class="spacer"></div>
+  <div class="clock" id="clock"></div>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="status">
+      <div class="state" id="state">Offline</div>
+      <div class="reason" id="reason">Start the camera to begin monitoring.</div>
+    </div>
+    <div class="video-wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay"></canvas>
+      <div class="corners"><i></i><i></i><i></i><i></i></div>
+      <div class="msg" id="placeholder">Camera is off.<br>Video is processed locally in the browser and is never uploaded.</div>
+      <div class="hud"><span id="hudL"></span><span id="hudR"></span></div>
+    </div>
+    <div class="controls">
+      <button class="primary" id="startBtn">Start monitoring</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="calBtn" disabled>Recalibrate</button>
+      <span id="note">Loading models…</span>
+      <label class="chk"><input type="checkbox" id="sound" checked> Audible alerts</label>
+    </div>
+  </section>
+
+  <div class="side">
+    <section class="panel">
+      <div class="panel-h">Driver condition</div>
+      <div class="gauges">
+        <div class="gauge">
+          <div class="k">Fatigue</div>
+          <div class="v"><span id="fatV">--</span><small>/100</small></div>
+          <div class="meter"><b id="fatB"></b><u style="left:40%"></u><u style="left:65%"></u></div>
+          <div class="cap" id="fatC">No data</div>
+        </div>
+        <div class="gauge">
+          <div class="k">Stress</div>
+          <div class="v"><span id="strV">--</span><small>/100</small></div>
+          <div class="meter"><b id="strB"></b><u style="left:35%"></u><u style="left:60%"></u></div>
+          <div class="cap" id="strC">No data</div>
+        </div>
+        <div class="gauge">
+          <div class="k">Sleep state</div>
+          <div class="v text" id="slpV">--</div>
+          <div class="meter"><b id="slpB"></b><u style="left:50%"></u></div>
+          <div class="cap" id="slpC">Eyes closed 0.0 s</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-h">Live measurements</div>
+      <div class="stats">
+        <div class="stat"><span>Eye white visible</span><b id="mEar">--</b></div>
+        <div class="stat"><span>PERCLOS (30 s)</span><b id="mPerclos">--</b></div>
+        <div class="stat"><span>Blink rate</span><b id="mBlink">--</b></div>
+        <div class="stat"><span>Yawns (5 min)</span><b id="mYawn">0</b></div>
+        <div class="stat"><span>Mouth opening</span><b id="mMar">--</b></div>
+        <div class="stat"><span>Session time</span><b id="mTime">00:00</b></div>
+      </div>
+    </section>
+  </div>
+
+  <section class="lower">
+    <div class="panel">
+      <div class="panel-h">Trend, last 5 minutes
+        <span class="legend"><span><i style="background:var(--warn)"></i>Fatigue</span><span><i style="background:var(--info)"></i>Stress</span></span>
+      </div>
+      <canvas id="chart"></canvas>
+    </div>
+    <div class="panel">
+      <div class="panel-h">Event log <span id="evCount">0 events</span></div>
+      <div class="log" id="log"><div class="empty">No events recorded.</div></div>
+    </div>
+  </section>
+
+  <p class="foot">Estimates are derived from eye closure (PERCLOS), blink and yawn behaviour, and facial expression. Stress is inferred from expression only and is indicative, not a medical measurement. Demonstration system, not a certified safety device.</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
+<script>
+const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model/';
+const $ = id => document.getElementById(id);
+const video = $('video'), overlay = $('overlay'), ctx = overlay.getContext('2d');
+
+// ---- thresholds (tweak here) ----
+const T = {
+  sleepSec: 2.0,        // eyes closed this long = asleep
+  microSec: 1.0,        // ... = microsleep warning
+  whiteFactor: 0.5,     // closed when visible sclera < calibrated open-eye value * this
+  yawnMar: 0.55, yawnSec: 1.2,
+  fatigueWarn: 65, fatigueCaution: 40,
+  stressHigh: 60, stressCaution: 35,
+  absentSec: 3,
+  perclosWindow: 30,    // seconds
+};
+
+let running = false, modelsReady = false, stream = null, audio = null;
+let S;  // session state
+function fresh() {
+  return {
+    t0: performance.now(), last: performance.now(),
+    hist: [], calW: [], calE: [], useEar: false, thr: null,
+    closedDur: 0, wasClosed: false, flags: { micro: false, sleep: false, fat: false, str: false, absent: false },
+    frames: [], blinks: [], blinkDur: [], yawns: [], mouthOpen: 0, yawnArmed: true,
+    fatigue: 0, stress: 0, absent: 0, level: 0, lastBeep: 0,
+    series: [], lastSample: 0, events: [],
+    t() { return (performance.now() - this.t0) / 1000; },
+  };
+}
+
+// ---- clock ----
+const tick = () => $('clock').textContent = new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' });
+tick(); setInterval(tick, 1000);
+
+// ---- models ----
+(async () => {
+  try {
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+    modelsReady = true; $('note').textContent = 'Models ready.';
+  } catch (e) { $('note').textContent = 'Model download failed. Check your internet connection.'; console.error(e); }
+})();
+
+// ---- geometry ----
+const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const ear = (p, i) => (d(p[i + 1], p[i + 5]) + d(p[i + 2], p[i + 4])) / (2 * d(p[i], p[i + 3]));
+const mar = p => (d(p[61], p[67]) + d(p[62], p[66]) + d(p[63], p[65])) / (3 * d(p[60], p[64]));
+const median = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+
+// ---- controls ----
+$('startBtn').onclick = async () => {
+  if (!modelsReady) { $('note').textContent = 'Models are still loading.'; return; }
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } }); }
+  catch (e) { $('note').textContent = 'Camera unavailable or permission denied.'; return; }
+  audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+  sleepAlarm.play().then(stopAlarm).catch(() => {});   // unlock playback while we have a user gesture
+  video.srcObject = stream; await video.play();
+  overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+  $('placeholder').style.display = 'none';
+  $('startBtn').disabled = true; $('stopBtn').disabled = false; $('calBtn').disabled = false;
+  S = fresh(); running = true; renderLog(); $('note').textContent = '';
+  loop();
+};
+$('stopBtn').onclick = () => {
+  running = false; stopAlarm(); stream && stream.getTracks().forEach(t => t.stop()); video.srcObject = null;
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  $('placeholder').style.display = 'grid';
+  $('startBtn').disabled = false; $('stopBtn').disabled = true; $('calBtn').disabled = true;
+  setLevel('x', 'Offline', 'Monitoring stopped.');
+};
+$('calBtn').onclick = () => { S.hist = []; S.calW = []; S.calE = []; S.useEar = false; S.thr = null; };
+
+// ---- main loop ----
+const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+async function loop() {
+  if (!running) return;
+  const res = await faceapi.detectSingleFace(video, opts).withFaceLandmarks().withFaceExpressions();
+  if (pix.width !== video.videoWidth) { pix.width = video.videoWidth; pix.height = video.videoHeight; }
+  pctx.drawImage(video, 0, 0);
+  const now = performance.now(), dt = Math.min((now - S.last) / 1000, 0.5); S.last = now;
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  res ? process(res, dt) : noFace(dt);
+  update(dt);
+  setTimeout(loop, 60);
+}
+
+function noFace(dt) {
+  S.absent += dt; S.closedDur = 0; S.wasClosed = false;
+  $('hudL').textContent = 'No face in view';
+}
+
+function process(res, dt) {
+  S.absent = 0; S.flags.absent = false;
+  const p = res.landmarks.positions;
+  const e = (ear(p, 36) + ear(p, 42)) / 2, m = mar(p);
+  const w = (eyeWhite(p, 36) + eyeWhite(p, 42)) / 2;   // visible sclera (white of the eye)
+  S.ear = e; S.mar = m; S.white = w;
+
+  // calibrate on the first samples. Primary signal is the sclera ratio; EAR is used only if no white is measurable (e.g. heavy glare or tinted lenses)
+  if (S.thr === null) {
+    S.calW.push(w); S.calE.push(e);
+    $('hudL').textContent = `Calibrating ${Math.min(S.calW.length, 25)}/25: look ahead, eyes open`;
+    if (S.calW.length >= 25) {
+      S.useEar = median(S.calW) < 0.02;
+      S.hist = S.useEar ? S.calE : S.calW; setBaseline();
+    }
+    drawFace(p, false); return;
+  }
+  const sig = S.useEar ? e : w;
+  $('hudL').textContent = 'Tracking';
+  const closed = sig < S.thr;
+  if (!closed) { S.hist.push(sig); S.hist = S.hist.slice(-200); setBaseline(); }
+
+  // eye closure bookkeeping
+  if (closed) S.closedDur += dt;
+  else {
+    if (S.wasClosed && S.closedDur > 0.05 && S.closedDur < 0.7) { S.blinks.push(S.t()); S.blinkDur.push(S.closedDur); S.blinkDur = S.blinkDur.slice(-20); }
+    S.closedDur = 0; S.flags.micro = S.flags.sleep = false;
+  }
+  S.wasClosed = closed;
+  S.frames.push({ t: S.t(), dt, closed });
+
+  // yawn: mouth wide open for a sustained time
+  if (m > T.yawnMar) {
+    S.mouthOpen += dt;
+    if (S.mouthOpen > T.yawnSec && S.yawnArmed) { S.yawns.push(S.t()); S.yawnArmed = false; addEvent(1, 'Yawn detected'); }
+  } else { S.mouthOpen = 0; S.yawnArmed = true; }
+
+  // stress from expression (smoothed)
+  const x = res.expressions;
+  const rawStress = clamp(x.angry + x.fearful + 0.7 * x.disgusted + 0.5 * x.sad) * 100;
+  S.stress += 0.05 * (rawStress - S.stress);
+
+  S.closed = closed;
+  drawFace(p, closed);
+}
+
+S = fresh();
+
+function setBaseline() {
+  const a = [...S.hist].sort((x, y) => x - y), base = a[Math.floor(a.length * 0.8)];
+  S.thr = S.useEar ? clamp(base * 0.8, 0.1, 0.3) : clamp(base * T.whiteFactor, 0.004, 0.2);
+}
+
+// Share of the eye opening that shows sclera. Sclera = brighter and less colourful than the driver's own skin,
+// measured from a patch just below the eye so it adapts to lighting. Closed lid = skin colour, so the ratio drops to ~0.
+const pix = document.createElement('canvas'), pctx = pix.getContext('2d', { willReadFrequently: true });
+function eyeWhite(p, i) {
+  const pts = p.slice(i, i + 6), ew = d(pts[0], pts[3]);
+  const cx = pts.reduce((a, q) => a + q.x, 0) / 6, cy = pts.reduce((a, q) => a + q.y, 0) / 6;
+  const poly = pts.map(q => ({ x: cx + (q.x - cx) * 0.9, y: cy + (q.y - cy) * 0.9 }));
+  const xs = poly.map(q => q.x), ys = poly.map(q => q.y);
+  const x0 = Math.max(0, Math.floor(Math.min(...xs))), x1 = Math.min(pix.width, Math.ceil(Math.max(...xs)));
+  const y0 = Math.max(0, Math.floor(Math.min(...ys))), y1 = Math.min(pix.height, Math.ceil(Math.max(...ys)));
+  if (x1 - x0 < 3 || y1 - y0 < 1) return 0;
+
+  // skin reference below the eye
+  const sx = Math.max(0, Math.floor(x0 + ew * 0.2)), sy = Math.min(pix.height - 4, Math.floor(y1 + ew * 0.25));
+  const sw = Math.max(2, Math.min(Math.floor(ew * 0.6), pix.width - sx)), sh = Math.max(2, Math.min(Math.floor(ew * 0.25), pix.height - sy));
+  const sk = pctx.getImageData(sx, sy, sw, sh).data; let R = 0, G = 0, B = 0, n = sk.length / 4;
+  for (let k = 0; k < sk.length; k += 4) { R += sk[k]; G += sk[k + 1]; B += sk[k + 2]; }
+  R /= n; G /= n; B /= n;
+  const sMax = Math.max(R, G, B), skinV = sMax / 255, skinSat = (sMax - Math.min(R, G, B)) / (sMax + 1);
+
+  const img = pctx.getImageData(x0, y0, x1 - x0, y1 - y0), W = x1 - x0; let white = 0;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    if (!inPoly(x + 0.5, y + 0.5, poly)) continue;
+    const k = ((y - y0) * W + (x - x0)) * 4, r = img.data[k], g = img.data[k + 1], b = img.data[k + 2];
+    const mx = Math.max(r, g, b), sat = (mx - Math.min(r, g, b)) / (mx + 1);
+    if (mx / 255 >= skinV * 0.9 && sat < skinSat * 0.55) white++;
+  }
+  return white / (ew * ew);
+}
+function inPoly(x, y, q) {
+  let c = false;
+  for (let i = 0, j = q.length - 1; i < q.length; j = i++)
+    if ((q[i].y > y) !== (q[j].y > y) && x < (q[j].x - q[i].x) * (y - q[i].y) / (q[j].y - q[i].y) + q[i].x) c = !c;
+  return c;
+}
+
+function drawFace(p, closed) {
+  const col = closed ? '#e0524a' : '#6fcf9f';
+  ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.lineJoin = 'round';
+  const poly = (a, b, close) => { ctx.beginPath(); for (let i = a; i <= b; i++) i === a ? ctx.moveTo(p[i].x, p[i].y) : ctx.lineTo(p[i].x, p[i].y); if (close) ctx.closePath(); ctx.stroke(); };
+  poly(36, 41, true); poly(42, 47, true);
+  ctx.strokeStyle = S.mouthOpen > 0.4 ? '#d9a23a' : 'rgba(255,255,255,.6)'; ctx.lineWidth = 1.5; poly(60, 67, true);
+}
+
+// ---- derived metrics, status, UI ----
+function update(dt) {
+  const t = S.t();
+  // trim windows
+  S.frames = S.frames.filter(f => f.t > t - T.perclosWindow);
+  S.blinks = S.blinks.filter(b => b > t - 60);
+  S.yawns = S.yawns.filter(y => y > t - 300);
+
+  const tot = S.frames.reduce((a, f) => a + f.dt, 0), cl = S.frames.reduce((a, f) => a + (f.closed ? f.dt : 0), 0);
+  const perclos = tot > 3 ? cl / tot : 0;
+  const avgBlink = S.blinkDur.length ? S.blinkDur.reduce((a, b) => a + b, 0) / S.blinkDur.length : 0.15;
+
+  const fatTarget = 100 * (0.6 * clamp(perclos / 0.25) + 0.25 * clamp(S.yawns.length / 3) + 0.15 * clamp((avgBlink - 0.15) / 0.35));
+  if (S.thr !== null && S.absent < 1) S.fatigue += 0.08 * (fatTarget - S.fatigue);
+  // immediate bump so prolonged closure is reflected without waiting for the window
+  const fat = Math.max(S.fatigue, clamp(S.closedDur / T.sleepSec) * 100);
+
+  // sleep state
+  let sleep = 'Awake';
+  if (S.absent >= 1) sleep = '--';
+  else if (S.closedDur >= T.sleepSec) sleep = 'Asleep';
+  else if (S.closedDur >= 0.8 || fat >= T.fatigueWarn) sleep = 'Drowsy';
+
+  // events with hysteresis
+  if (S.closedDur >= T.microSec && !S.flags.micro) { S.flags.micro = true; addEvent(2, 'Microsleep: eyes closed over 1 s'); }
+  if (S.closedDur >= T.sleepSec && !S.flags.sleep) { S.flags.sleep = true; addEvent(3, 'Sleep detected: eyes closed over 2 s'); }
+  if (fat >= T.fatigueWarn && !S.flags.fat) { S.flags.fat = true; addEvent(2, `Fatigue score high (${Math.round(fat)})`); } else if (fat < T.fatigueWarn - 10) S.flags.fat = false;
+  if (S.stress >= T.stressHigh && !S.flags.str) { S.flags.str = true; addEvent(1, `Stress level high (${Math.round(S.stress)})`); } else if (S.stress < T.stressHigh - 10) S.flags.str = false;
+  if (S.absent >= T.absentSec && !S.flags.absent) { S.flags.absent = true; addEvent(2, 'Driver not visible for 3 s'); }
+
+  // overall level
+  let level = 0, reason = 'All indicators within normal range.';
+  if (S.thr === null && S.absent < T.absentSec) { level = 'x'; reason = 'Calibrating to your eyes. Look straight ahead.'; }
+  else if (S.absent >= T.absentSec) { level = 2; reason = 'Driver not visible to the camera.'; }
+  else if (sleep === 'Asleep') { level = 3; reason = 'Eyes have been closed for over 2 seconds.'; }
+  else if (S.closedDur >= T.microSec || fat >= T.fatigueWarn) { level = 2; reason = S.closedDur >= T.microSec ? 'Prolonged eye closure.' : 'Fatigue score is high. Consider taking a break.'; }
+  else if (fat >= T.fatigueCaution || S.stress >= T.stressCaution || S.mouthOpen > T.yawnSec) { level = 1; reason = fat >= T.fatigueCaution ? 'Early signs of fatigue.' : S.stress >= T.stressCaution ? 'Elevated stress indicators.' : 'Yawning detected.'; }
+  const names = { 0: 'Alert', 1: 'Caution', 2: 'Warning', 3: 'Critical', x: S.thr === null ? 'Calibrating' : 'Offline' };
+  setLevel(level, names[level], reason);
+  alertSound(level, t);
+
+  // gauges
+  setGauge('fat', fat, T.fatigueWarn, T.fatigueCaution, fat >= T.fatigueWarn ? 'High' : fat >= T.fatigueCaution ? 'Moderate' : 'Low');
+  setGauge('str', S.stress, T.stressHigh, T.stressCaution, S.stress >= T.stressHigh ? 'High' : S.stress >= T.stressCaution ? 'Moderate' : 'Low');
+  const sp = clamp(S.closedDur / T.sleepSec) * 100;
+  $('slpV').textContent = sleep; $('slpB').style.width = sp + '%';
+  $('slpB').style.background = sleep === 'Asleep' ? 'var(--bad)' : sleep === 'Drowsy' ? 'var(--warn)' : 'var(--ok)';
+  $('slpC').textContent = `Eyes closed ${S.closedDur.toFixed(1)} s`;
+
+  // stats
+  if (S.ear !== undefined) { $('mEar').textContent = S.useEar ? 'EAR ' + S.ear.toFixed(2) : (S.white * 100).toFixed(1) + ' %'; $('mMar').textContent = S.mar.toFixed(2); }
+  $('mPerclos').textContent = (perclos * 100).toFixed(0) + ' %';
+  $('mBlink').textContent = S.thr ? Math.round(S.blinks.length * 60 / Math.min(60, Math.max(t, 15))) + ' /min' : '--';
+  $('mYawn').textContent = S.yawns.length;
+  const mm = Math.floor(t / 60), ss = Math.floor(t % 60); $('mTime').textContent = String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
+  $('hudR').textContent = S.thr && S.ear !== undefined && S.absent < 1 ? `Eyes ${S.closed ? 'CLOSED' : 'open'}  ·  ${S.useEar ? 'EAR ' + S.ear.toFixed(2) : 'white ' + (S.white * 100).toFixed(1) + '%'} / limit ${(S.thr * (S.useEar ? 1 : 100)).toFixed(S.useEar ? 2 : 1)}${S.useEar ? '' : '%'}` : '';
+
+  // 1 Hz chart sample
+  if (t - S.lastSample >= 1) { S.lastSample = t; S.series.push([fat, S.stress]); S.series = S.series.slice(-300); drawChart(); }
+}
+
+function setGauge(id, v, hi, mid, cap) {
+  $(id + 'V').textContent = Math.round(v); $(id + 'C').textContent = cap;
+  const b = $(id + 'B'); b.style.width = v + '%'; b.style.background = v >= hi ? 'var(--bad)' : v >= mid ? 'var(--warn)' : 'var(--ok)';
+}
+function setLevel(l, name, reason) {
+  S && (S.level = l);
+  document.body.dataset.level = l; $('state').textContent = name; $('reason').textContent = reason;
+}
+
+// ---- alerts ----
+function beep(freq, len) {
+  if (!audio || !$('sound').checked) return;
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = 'square'; o.frequency.value = freq; g.gain.value = 0.08;
+  o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + len);
+}
+const sleepAlarm = new Audio('pakad-mc.mp3'); sleepAlarm.loop = true;
+function stopAlarm() { if (!sleepAlarm.paused) { sleepAlarm.pause(); sleepAlarm.currentTime = 0; } }
+function alertSound(level, t) {
+  // asleep (critical): play the custom alarm clip, looping until the eyes open
+  if (level === 3 && $('sound').checked) { if (sleepAlarm.paused) sleepAlarm.play().catch(() => {}); }
+  else stopAlarm();
+  if (level === 2 && S.prevLevel !== 2) beep(660, 0.2);
+  S.prevLevel = level;
+}
+
+// ---- event log ----
+function addEvent(level, text) {
+  const t = S.t(), mm = String(Math.floor(t / 60)).padStart(2, '0'), ss = String(Math.floor(t % 60)).padStart(2, '0');
+  S.events.unshift({ time: `${mm}:${ss}`, level, text }); S.events = S.events.slice(0, 50); renderLog();
+}
+function renderLog() {
+  const c = { 1: 'var(--warn)', 2: '#e0813a', 3: 'var(--bad)' };
+  $('evCount').textContent = S.events.length + (S.events.length === 1 ? ' event' : ' events');
+  $('log').innerHTML = S.events.length
+    ? '<table>' + S.events.map(e => `<tr><td>${e.time}</td><td><i style="background:${c[e.level]}"></i></td><td>${e.text}</td></tr>`).join('') + '</table>'
+    : '<div class="empty">No events recorded.</div>';
+}
+
+// ---- chart ----
+function drawChart() {
+  const c = $('chart'), r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  c.width = r.width * dpr; c.height = r.height * dpr;
+  const g = c.getContext('2d'); g.scale(dpr, dpr);
+  const W = r.width, H = r.height, L = 36, R = 12, Tp = 12, B = 22, pw = W - L - R, ph = H - Tp - B;
+  const y = v => Tp + ph * (1 - v / 100);
+  g.font = '11px -apple-system, Segoe UI, sans-serif'; g.lineWidth = 1;
+  [0, 25, 50, 75, 100].forEach(v => { g.strokeStyle = '#242a34'; g.beginPath(); g.moveTo(L, y(v)); g.lineTo(W - R, y(v)); g.stroke(); g.fillStyle = '#5d6574'; g.textAlign = 'right'; g.fillText(v, L - 6, y(v) + 4); });
+  g.setLineDash([4, 4]); g.strokeStyle = '#7a3b37'; g.beginPath(); g.moveTo(L, y(T.fatigueWarn)); g.lineTo(W - R, y(T.fatigueWarn)); g.stroke(); g.setLineDash([]);
+  g.fillStyle = '#5d6574'; g.textAlign = 'left'; g.fillText('-5 min', L, H - 6); g.textAlign = 'right'; g.fillText('now', W - R, H - 6);
+  const n = S ? S.series.length : 0; if (n < 2) return;
+  [[0, '#d9a23a'], [1, '#6f9bf0']].forEach(([k, col]) => {
+    g.beginPath(); S.series.forEach((s, i) => { const x = W - R - pw * (n - 1 - i) / 299; i ? g.lineTo(x, y(s[k])) : g.moveTo(x, y(s[k])); });
+    g.strokeStyle = col; g.lineWidth = 1.8; g.lineJoin = 'round'; g.stroke();
+  });
+}
+addEventListener('resize', drawChart);
+setLevel('x', 'Offline', 'Start the camera to begin monitoring.');
+drawChart();
+</script>
+</body>
+</html>

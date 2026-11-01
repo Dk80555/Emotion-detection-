@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Emotion & Mood Detector</title>
+<style>
+  :root {
+    --bg: #120b2e; --panel: #1d1450; --panel-2: #271b66; --line: #3a2d85;
+    --text: #eceaff; --muted: #9a93d6; --green: #7dff3a; --green-d: #1f9d3a;
+    --accent: #8b5cf6;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: radial-gradient(circle at 20% 0%, #2a1a7a, var(--bg) 60%); color: var(--text);
+         font: 15px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; min-height: 100vh; padding: 20px; }
+  header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  h1 { font-size: 1.3rem; }
+  .meta { display: flex; gap: 12px; align-items: center; font-size: .8rem; color: var(--muted); }
+  .pill { background: var(--panel-2); border: 1px solid var(--line); border-radius: 99px; padding: 4px 12px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #666; margin-right: 6px; }
+  .live .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .grid { display: grid; gap: 14px; grid-template-columns: 1.1fr 1fr; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  .card h2 { font-size: .85rem; color: var(--muted); font-weight: 600; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .05em; }
+  .video-wrap { position: relative; border-radius: 10px; overflow: hidden; background: #000; aspect-ratio: 4/3; }
+  video, canvas.overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .placeholder { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--muted); padding: 20px; }
+  .controls { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  button { border: 0; border-radius: 10px; padding: 9px 18px; font-weight: 600; cursor: pointer; color: #fff; background: var(--accent); }
+  button.secondary { background: var(--panel-2); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .right { display: grid; gap: 14px; }
+  .detected { display: flex; align-items: center; gap: 16px; }
+  .emoji { font-size: 3.4rem; width: 84px; height: 84px; display: grid; place-items: center; border-radius: 50%;
+           background: radial-gradient(circle, var(--green-d), #0d4a1c); }
+  .label { font-size: 2rem; font-weight: 800; color: var(--green); }
+  .conf { color: var(--muted); }
+  .bar-row { display: grid; grid-template-columns: 70px 1fr 48px; gap: 10px; align-items: center; margin: 6px 0; font-size: .85rem; }
+  .bar { height: 8px; border-radius: 99px; background: #382c80; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; border-radius: 99px; transition: width .25s; }
+  .pct { text-align: right; color: var(--muted); }
+  .mood { border-radius: 10px; padding: 12px 14px; font-weight: 700; border: 1px solid; }
+  .mood small { display: block; font-weight: 400; opacity: .85; }
+  .mood.pos { background: #14502a; border-color: #2ecc5c; color: #b6ffcb; }
+  .mood.neu { background: #3a3a63; border-color: #7b7bb5; color: #dcdcff; }
+  .mood.neg { background: #5a1f2c; border-color: #e0526b; color: #ffc4cf; }
+  #trend { width: 100%; height: 160px; display: block; }
+  .apps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .apps span { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; font-size: .78rem; color: var(--muted); }
+  footer { margin-top: 14px; font-size: .78rem; color: var(--muted); text-align: center; }
+  #status { color: var(--muted); font-size: .85rem; align-self: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧠 AI Emotion &amp; Mood Detection Dashboard</h1>
+  <div class="meta">
+    <a class="pill" href="driver.html" style="color:inherit;text-decoration:none">Driver Monitoring →</a>
+    <span class="pill" id="livePill"><span class="dot"></span><span id="liveText">Idle</span></span>
+    <span class="pill" id="clock"></span>
+  </div>
+</header>
+
+<div class="grid">
+  <section class="card">
+    <h2>Live Feed</h2>
+    <div class="video-wrap">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay" class="overlay"></canvas>
+      <div class="placeholder" id="placeholder">Press “Start Camera” to begin.<br>Everything runs in your browser — no video is uploaded.</div>
+    </div>
+    <div class="controls">
+      <button id="startBtn">Start Camera</button>
+      <button id="stopBtn" class="secondary" disabled>Stop Camera</button>
+      <span id="status">Loading AI model…</span>
+    </div>
+  </section>
+
+  <div class="right">
+    <section class="card">
+      <h2>Detected Emotion</h2>
+      <div class="detected">
+        <div class="emoji" id="emoji">😐</div>
+        <div>
+          <div class="label" id="label">—</div>
+          <div class="conf">Confidence: <span id="conf">0.0%</span></div>
+        </div>
+      </div>
+      <div id="bars" style="margin-top:14px"></div>
+    </section>
+
+    <section class="card">
+      <h2>Mood Status</h2>
+      <div class="mood neu" id="mood">Waiting for a face…<small>No face detected yet</small></div>
+    </section>
+
+    <section class="card">
+      <h2>Mood Trend (last 60 s)</h2>
+      <canvas id="trend"></canvas>
+      <div class="apps"><span>🚗 Automotive</span><span>🏥 Healthcare</span><span>📊 Market Research</span><span>🎓 Education</span><span>🎮 Gaming</span><span>🎧 Customer Service</span></div>
+    </section>
+  </div>
+</div>
+
+<footer>This system detects emotions from facial expressions, not true feelings.</footer>
+
+<!-- face-api.js (maintained fork): TinyFaceDetector + FaceExpressionNet, ~1 MB of models -->
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
+<script>
+const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model/';
+const EMOTIONS = {
+  happy:     { name: 'Happy',    emoji: '😄', color: '#7dff3a', valence: 1.0 },
+  neutral:   { name: 'Neutral',  emoji: '😐', color: '#3da5ff', valence: 0.5 },
+  sad:       { name: 'Sad',      emoji: '😢', color: '#ffb83d', valence: 0.0 },
+  angry:     { name: 'Angry',    emoji: '😠', color: '#ff4d4d', valence: 0.0 },
+  surprised: { name: 'Surprise', emoji: '😮', color: '#e24dff', valence: 0.7 },
+  fearful:   { name: 'Fear',     emoji: '😨', color: '#9a8cff', valence: 0.2 },
+  disgusted: { name: 'Disgust',  emoji: '🤢', color: '#6bd36b', valence: 0.1 },
+};
+const KEYS = Object.keys(EMOTIONS);
+const $ = id => document.getElementById(id);
+const video = $('video'), overlay = $('overlay'), ctx = overlay.getContext('2d');
+
+// build probability bars
+$('bars').innerHTML = KEYS.map(k => `
+  <div class="bar-row"><span>${EMOTIONS[k].name}</span>
+  <div class="bar"><i id="b-${k}" style="background:${EMOTIONS[k].color}"></i></div>
+  <span class="pct" id="p-${k}">0.0%</span></div>`).join('');
+
+let stream = null, running = false, modelsReady = false;
+let smooth = Object.fromEntries(KEYS.map(k => [k, 0]));   // smoothed probabilities
+let trend = [];                                           // mood score history (0..1), 1 per second
+let lastTrendPush = 0;
+
+// ---- clock ----
+setInterval(() => $('clock').textContent = new Date().toLocaleString(), 1000);
+$('clock').textContent = new Date().toLocaleString();
+
+// ---- load model ----
+(async () => {
+  try {
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+    modelsReady = true;
+    $('status').textContent = 'Model ready.';
+  } catch (e) {
+    $('status').textContent = 'Could not load model — check internet connection.';
+    console.error(e);
+  }
+})();
+
+// ---- camera ----
+$('startBtn').onclick = async () => {
+  if (!modelsReady) { $('status').textContent = 'Model still loading…'; return; }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+  } catch (e) {
+    $('status').textContent = 'Camera access denied or unavailable.';
+    return;
+  }
+  video.srcObject = stream;
+  await video.play();
+  overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+  $('placeholder').style.display = 'none';
+  $('startBtn').disabled = true; $('stopBtn').disabled = false;
+  setLive(true); running = true; $('status').textContent = '';
+  loop();
+};
+$('stopBtn').onclick = () => {
+  running = false;
+  stream && stream.getTracks().forEach(t => t.stop());
+  video.srcObject = null; ctx.clearRect(0, 0, overlay.width, overlay.height);
+  $('placeholder').style.display = 'grid';
+  $('startBtn').disabled = false; $('stopBtn').disabled = true;
+  setLive(false);
+};
+function setLive(on) {
+  $('livePill').classList.toggle('live', on);
+  $('liveText').textContent = on ? 'Live' : 'Idle';
+}
+
+// ---- detection loop (~8 fps keeps CPU low) ----
+const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+async function loop() {
+  if (!running) return;
+  const t0 = performance.now();
+  const res = await faceapi.detectSingleFace(video, opts).withFaceExpressions();
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  if (res) {
+    for (const k of KEYS) smooth[k] += 0.35 * (res.expressions[k] - smooth[k]);  // EMA to reduce flicker
+    render(res.detection.box);
+  } else {
+    noFace();
+  }
+  setTimeout(loop, Math.max(0, 120 - (performance.now() - t0)));
+}
+
+function topEmotion() { return KEYS.reduce((a, b) => smooth[a] > smooth[b] ? a : b); }
+
+function render(box) {
+  const k = topEmotion(), e = EMOTIONS[k];
+  // box + label (canvas is CSS-mirrored together with the video)
+  ctx.strokeStyle = e.color; ctx.lineWidth = 3; ctx.strokeRect(box.x, box.y, box.width, box.height);
+  ctx.save(); ctx.translate(box.x, box.y - 6); ctx.scale(-1, 1);       // un-mirror the text
+  ctx.font = 'bold 18px system-ui'; ctx.fillStyle = e.color; ctx.textAlign = 'right';
+  ctx.fillText(`${e.name} ${(smooth[k] * 100).toFixed(0)}%`, -box.width, 0); ctx.restore();
+
+  $('emoji').textContent = e.emoji; $('label').textContent = e.name; $('label').style.color = e.color;
+  $('conf').textContent = (smooth[k] * 100).toFixed(1) + '%';
+  for (const x of KEYS) {
+    $('b-' + x).style.width = (smooth[x] * 100) + '%';
+    $('p-' + x).textContent = (smooth[x] * 100).toFixed(1) + '%';
+  }
+  const score = KEYS.reduce((s, x) => s + smooth[x] * EMOTIONS[x].valence, 0);
+  setMood(score);
+  const now = Date.now();
+  if (now - lastTrendPush > 1000) { trend.push(score); trend = trend.slice(-60); lastTrendPush = now; drawTrend(); }
+}
+
+function noFace() {
+  $('label').textContent = '—'; $('emoji').textContent = '🫥'; $('conf').textContent = '0.0%';
+  $('mood').className = 'mood neu'; $('mood').innerHTML = 'No face detected<small>Face the camera in good light</small>';
+}
+
+function setMood(s) {
+  const m = $('mood');
+  if (s >= 0.65)      { m.className = 'mood pos'; m.innerHTML = 'Positive Mood<small>You seem to be in a good mood!</small>'; }
+  else if (s >= 0.35) { m.className = 'mood neu'; m.innerHTML = 'Neutral Mood<small>Things look calm and steady.</small>'; }
+  else                { m.className = 'mood neg'; m.innerHTML = 'Low Mood<small>You might be feeling down or tense.</small>'; }
+}
+
+// ---- tiny canvas line chart ----
+function drawTrend() {
+  const c = $('trend'), r = c.getBoundingClientRect(), d = devicePixelRatio || 1;
+  c.width = r.width * d; c.height = r.height * d;
+  const g = c.getContext('2d'); g.scale(d, d);
+  const W = r.width, H = r.height, L = 34, B = 18, pw = W - L - 6, ph = H - B - 6;
+  g.font = '11px system-ui'; g.fillStyle = '#9a93d6'; g.strokeStyle = '#3a2d85'; g.lineWidth = 1;
+  [0, .25, .5, .75, 1].forEach(v => {
+    const y = 6 + ph * (1 - v);
+    g.beginPath(); g.moveTo(L, y); g.lineTo(W - 6, y); g.stroke();
+    g.fillText(Math.round(v * 100) + '%', 2, y + 4);
+  });
+  if (trend.length < 2) return;
+  const pts = trend.map((v, i) => [L + pw * i / (trend.length - 1), 6 + ph * (1 - v)]);
+  g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y));
+  g.lineTo(pts.at(-1)[0], 6 + ph); g.lineTo(pts[0][0], 6 + ph); g.closePath();
+  const grad = g.createLinearGradient(0, 0, 0, H); grad.addColorStop(0, 'rgba(125,255,58,.45)'); grad.addColorStop(1, 'rgba(125,255,58,0)');
+  g.fillStyle = grad; g.fill();
+  g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y));
+  g.strokeStyle = '#7dff3a'; g.lineWidth = 2.5; g.lineJoin = 'round'; g.stroke();
+}
+drawTrend();
+addEventListener('resize', drawTrend);
+</script>
+</body>
+</html>
